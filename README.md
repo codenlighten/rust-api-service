@@ -28,21 +28,33 @@ Settings are environment variables; see `.env.example` (the service reads the pr
 
 ### Deliberate breaks
 
-Each change was made on purpose, the named test had to fail, then the code was restored. **Status: not yet performed.** The build host ran out of disk during this work, so these are the planned breaks and the test expected to catch each; this section will be rewritten with observed results.
+Each change was made on its own, the full suite run (`cargo test --no-fail-fast`), and the code restored (37 of 37 pass afterwards). Every break failed the tests named here.
 
-| Break | Test expected to fail |
+| Break | Tests that failed |
 |---|---|
-| Drop `AND user_id = ?` from `fetch` | `one_user_cannot_read_change_or_delete_anothers_notes` |
-| Accept expired tokens (remove the `exp` check in `token::verify`) | `expired_token_is_refused`, `expiry_is_enforced_at_the_boundary` |
-| Skip password verification in `login` | `login_with_wrong_password_or_unknown_email_is_the_same_401` |
+| Drop `AND user_id = ?` from `fetch` | `one_user_cannot_read_change_or_delete_anothers_notes`, `a_missing_note_and_someone_elses_note_look_identical` |
+| Accept expired tokens (`exp` check removed in `token::verify`) | `expired_token_is_refused`, `expiry_is_enforced_at_the_boundary` |
+| Skip password verification (`Hasher::verify` always true) | `login_with_wrong_password_or_unknown_email_is_the_same_401`, and two `password` unit tests |
 | Map `Conflict` to 400 | `duplicate_email_is_a_conflict_regardless_of_case` |
-| Make `after` filter `id >=` | `keyset_pagination_walks_every_note_once_in_order` |
+| Make the pagination filter `id >=` | `keyset_pagination_walks_every_note_once_in_order` |
+
+The checks that run on every change: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (17 unit and 20 integration tests) and `cargo build --release`. They passed on a clean build on the host below. The GitHub Actions workflow runs the same commands.
 
 ## Load test
 
 `scripts/loadtest.sh [runs] [concurrency] [seconds] [write_percent]` builds in release mode, starts the server on a fresh SQLite file, runs the closed-loop generator (`src/bin/loadgen.rs`, over keep-alive connections, after a 2 s warm-up) several times and prints one line per run with requests/s and p50/p99 latency.
 
-**Results: not yet measured.** No numbers are published until they have been collected with hardware, versions and spread over at least five runs. Server and generator share one machine, so any figure will include their contention.
+Measured on 2026-11-25 (13:42 to 13:46 by the host clock):
+
+- **Host:** AMD Ryzen 7 260, 16 threads, frequency governor `performance`. The server and the generator shared the same 8 logical CPUs (`taskset -c 0-7`, `nice 19`) with other light jobs on the machine (load average about 1.5 before the run, 8 during it).
+- **Software:** rustc 1.98.1, release build, `sqlx` 0.8 with SQLite, 32 concurrent connections, 20 s per run, 5 runs per mix, `errors=0` in all 10 runs.
+
+| Mix | Requests/s (5 runs) | p50 | p99 | Slowest single request |
+|---|---|---|---|---|
+| Reads only | 24,105 to 24,173 (median 24,136) | 1.32 ms | 1.56 to 1.57 ms | 4.5 to 5.1 ms |
+| 20% writes | 25,379 to 25,741 (median 25,525) | 1.13 to 1.14 ms | 4.15 to 4.18 ms | 105 to 430 ms |
+
+What these numbers are not: they come from one host, one run of five, with the generator competing for the same cores as the server, over loopback with no network and a tiny dataset (a few hundred notes), so they say nothing about behaviour on other hardware or under real traffic. The read-only mix is not faster than the mixed one; I did not profile why. The occasional slow requests in the mixed runs (up to 430 ms) are consistent with SQLite write stalls, but I did not confirm that.
 
 ## Limits
 
