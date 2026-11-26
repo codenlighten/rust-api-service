@@ -48,7 +48,7 @@ The checks that run on every change: `cargo fmt --check`, `cargo clippy --all-ta
 
 Measured on 2026-11-26 (10:41 to 10:46 by the host clock):
 
-- **Host:** AMD Ryzen 7 260, 16 threads, frequency governor `performance`. The server and the generator shared the same 8 logical CPUs (`taskset -c 0-7`, `nice 19`); no other benchmark or build job was booked, only light always-on services (load average 0.6 before the first mix, about 10 at the end of each).
+- **Host:** AMD Ryzen 7 260, 16 threads, frequency governor `performance`. The server and the generator shared the same 8 logical CPUs (`taskset -c 0-7`, `nice 19`); no other benchmark or build job was booked, only light always-on services (load average 0.4 before the first mix, 9 to 10 at the end of each).
 - **Software:** rustc 1.98.1, release build, `sqlx` 0.9.1 with the bundled SQLite 3.54.1, 32 concurrent connections, 20 s per run, 5 runs per mix, `errors=0` in all 10 runs.
 
 | Mix | Requests/s (5 runs) | p50 | p99 | Slowest single request |
