@@ -1,3 +1,4 @@
+use std::future::IntoFuture;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -5,6 +6,7 @@ use notes_api::app::{router, AppState};
 use notes_api::config::Config;
 use notes_api::{db, password::Hasher};
 use tokio::net::TcpListener;
+use tokio::sync::oneshot;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -28,10 +30,23 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("could not bind {}", config.bind_addr))?;
     tracing::info!(addr = %listener.local_addr()?, "listening");
 
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("server error")?;
+    let (signalled, signal_seen) = oneshot::channel();
+    let server = axum::serve(listener, router(state)).with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        let _ = signalled.send(());
+    });
+    // Draining waits for every request, and a client that never finishes sending one would hold
+    // the process open for ever. After the signal there is a deadline.
+    tokio::select! {
+        result = server.into_future() => result.context("server error")?,
+        () = async {
+            let _ = signal_seen.await;
+            tokio::time::sleep(config.shutdown_timeout).await;
+        } => anyhow::bail!(
+            "requests were still running {}s after the shutdown signal; abandoning them",
+            config.shutdown_timeout.as_secs()
+        ),
+    }
 
     // In-flight requests have finished; flush and close the database.
     pool.close().await;

@@ -166,6 +166,17 @@ async fn health_reports_503_when_the_database_is_gone() {
 }
 
 #[tokio::test]
+async fn health_reports_503_when_a_table_is_gone() {
+    let app = TestApp::new().await;
+    sqlx::query("DROP TABLE notes")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    let r = app.send(Method::GET, "/healthz", None, None).await;
+    assert_problem(&r, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
 async fn unknown_route_and_wrong_method_are_problem_json() {
     let app = TestApp::new().await;
     assert_problem(

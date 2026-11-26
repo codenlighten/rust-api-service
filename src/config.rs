@@ -1,6 +1,7 @@
 //! Configuration from environment variables, validated at startup.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 const MIN_SECRET_BYTES: usize = 32;
 
@@ -12,6 +13,8 @@ pub struct Config {
     pub token_ttl_secs: u64,
     pub db_max_connections: u32,
     pub json_logs: bool,
+    /// How long requests still running after a shutdown signal may take before they are abandoned.
+    pub shutdown_timeout: Duration,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -54,6 +57,13 @@ impl Config {
             token_ttl_secs: parse_num(&get, "TOKEN_TTL_SECS", 3600, 1, 30 * 24 * 3600)?,
             db_max_connections: parse_num(&get, "DB_MAX_CONNECTIONS", 8, 1, 64)? as u32,
             json_logs: get("LOG_FORMAT").is_some_and(|v| v == "json"),
+            shutdown_timeout: Duration::from_secs(parse_num(
+                &get,
+                "SHUTDOWN_TIMEOUT_SECS",
+                10,
+                1,
+                600,
+            )?),
         })
     }
 }
@@ -97,6 +107,7 @@ mod tests {
         assert_eq!(cfg.bind_addr.to_string(), "127.0.0.1:3000");
         assert_eq!(cfg.token_ttl_secs, 3600);
         assert!(!cfg.json_logs);
+        assert_eq!(cfg.shutdown_timeout.as_secs(), 10);
     }
 
     #[test]
