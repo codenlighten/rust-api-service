@@ -178,6 +178,22 @@ async fn unknown_route_and_wrong_method_are_problem_json() {
     );
 }
 
+// ---------- the bundled database ----------
+
+/// A version guard, not a test of the flaw: SQLite before 3.54.0 can return uninitialised memory for
+/// a crafted database and write-ahead-log pair (RUSTSEC-2026-0459). This fails if the SQLite linked
+/// into the build is ever older than the fixed release again.
+#[tokio::test]
+async fn the_linked_sqlite_is_at_least_3_54_0() {
+    let app = TestApp::new().await;
+    let version: String = sqlx::query_scalar("SELECT sqlite_version()")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let parts: Vec<u32> = version.split('.').map(|p| p.parse().unwrap()).collect();
+    assert!(parts >= vec![3, 54, 0], "the linked SQLite is {version}");
+}
+
 // ---------- registration and login ----------
 
 #[tokio::test]

@@ -43,7 +43,12 @@ pub struct Page {
     next_after: Option<i64>,
 }
 
-const COLUMNS: &str = "id, title, body, created_at, updated_at";
+/// The note columns, as a macro so every statement is one string literal fixed at compile time.
+macro_rules! columns {
+    () => {
+        "id, title, body, created_at, updated_at"
+    };
+}
 
 pub async fn create(
     State(state): State<AppState>,
@@ -52,9 +57,10 @@ pub async fn create(
 ) -> Result<(StatusCode, HeaderMap, Json<Note>), ApiError> {
     let (title, body) = validate::note(&input.title, &input.body).map_err(ApiError::Validation)?;
     let now = now_secs() as i64;
-    let note: Note = sqlx::query_as(&format!(
-        "INSERT INTO notes (user_id, title, body, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?) RETURNING {COLUMNS}"
+    let note: Note = sqlx::query_as(concat!(
+        "INSERT INTO notes (user_id, title, body, created_at, updated_at) ",
+        "VALUES (?, ?, ?, ?, ?) RETURNING ",
+        columns!()
     ))
     .bind(user_id)
     .bind(title)
@@ -90,8 +96,10 @@ pub async fn list(
         }
     };
 
-    let mut items: Vec<Note> = sqlx::query_as(&format!(
-        "SELECT {COLUMNS} FROM notes WHERE user_id = ? AND id > ? ORDER BY id LIMIT ?"
+    let mut items: Vec<Note> = sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM notes WHERE user_id = ? AND id > ? ORDER BY id LIMIT ?"
     ))
     .bind(user_id)
     .bind(after)
@@ -113,8 +121,10 @@ pub async fn fetch(
     AuthUser(user_id): AuthUser,
     ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<Note>, ApiError> {
-    sqlx::query_as(&format!(
-        "SELECT {COLUMNS} FROM notes WHERE id = ? AND user_id = ?"
+    sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM notes WHERE id = ? AND user_id = ?"
     ))
     .bind(id)
     .bind(user_id)
@@ -131,9 +141,10 @@ pub async fn replace(
     ApiJson(input): ApiJson<NoteInput>,
 ) -> Result<Json<Note>, ApiError> {
     let (title, body) = validate::note(&input.title, &input.body).map_err(ApiError::Validation)?;
-    sqlx::query_as(&format!(
-        "UPDATE notes SET title = ?, body = ?, updated_at = ? \
-         WHERE id = ? AND user_id = ? RETURNING {COLUMNS}"
+    sqlx::query_as(concat!(
+        "UPDATE notes SET title = ?, body = ?, updated_at = ? ",
+        "WHERE id = ? AND user_id = ? RETURNING ",
+        columns!()
     ))
     .bind(title)
     .bind(body)
