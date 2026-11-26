@@ -1,5 +1,7 @@
 # rust-api-service
 
+[![CI](https://github.com/codenlighten/rust-api-service/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/codenlighten/rust-api-service/actions/workflows/ci.yml)
+
 A notes REST API in Rust (axum, tokio, sqlx/SQLite) with argon2 password hashing, signed bearer tokens, per-user data isolation, RFC 9457 problem+json errors and an OpenAPI document. It shows Rust back-end engineering: typed errors, boundary validation, in-process integration tests, graceful shutdown and a reproducible load test.
 
 ## Run it
