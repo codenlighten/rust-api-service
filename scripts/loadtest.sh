@@ -18,9 +18,13 @@ trap stop EXIT
 echo "# $(rustc --version); $(lscpu | sed -n 's/^Model name: *//p'); $(nproc) logical CPUs"
 for i in $(seq "$RUNS"); do
   # A fresh database for every run, so that later runs do not measure a bigger one.
+  # Something already answering on the port would be measured in place of the server started here.
+  if curl -s -o /dev/null --max-time 1 http://127.0.0.1:3917/healthz; then echo "port 3917 is already in use" >&2; exit 1; fi
   WORK=$(mktemp -d)
   DATABASE_URL="sqlite://$WORK/load.sqlite?mode=rwc" ./target/release/rust-api-service & SERVER=$!
-  for _ in $(seq 50); do curl -fs http://127.0.0.1:3917/healthz >/dev/null && break; sleep 0.1; done
+  up=
+  for _ in $(seq 50); do curl -fs http://127.0.0.1:3917/healthz >/dev/null && { up=1; break; }; sleep 0.1; done
+  if [ -z "$up" ] || ! kill -0 "$SERVER" 2>/dev/null; then echo "the server did not start" >&2; exit 1; fi
   ./target/release/loadgen --url http://127.0.0.1:3917 --concurrency "$CONC" --duration-secs "$DUR" --write-percent "$WRITES"
   stop
 done

@@ -22,7 +22,7 @@ Settings are environment variables; see `.env.example` (the service reads the pr
 - **Isolation by construction.** Every note query carries the user id from the verified token. Someone else's note is a 404, indistinguishable from a missing one.
 - **One error type.** `ApiError` maps to statuses in one place and renders `application/problem+json`; extractor rejections (bad JSON, bad query, bad path) use it too. Internal errors are logged, never echoed.
 - **Boundaries validated.** Email, password, title and body limits, 64 KiB body cap, unknown fields refused, keyset pagination with bounded `limit`.
-- **Operable.** Config validated at startup with messages that say what to set; `tracing` logs with a per-request id (optional JSON); SIGTERM and Ctrl-C drain in-flight requests before the pool closes, with a deadline (`SHUTDOWN_TIMEOUT_SECS`, default 10) so a request that never finishes cannot keep the process alive (it then exits with status 1); `/healthz` reads the tables the service needs and answers 503 if it cannot.
+- **Operable.** Config validated at startup with messages that say what to set; `tracing` logs with a per-request id (optional JSON); on SIGTERM or Ctrl-C it stops accepting, lets in-flight requests finish and then closes the pool; after a deadline (`SHUTDOWN_TIMEOUT_SECS`, default 10) it gives up on any still running and exits with status 1 without that orderly close, so a request that never finishes cannot keep the process alive; `/healthz` reads the tables the service needs and answers 503 if it cannot.
 
 ## Tests
 
@@ -87,7 +87,7 @@ I kept the fix. The flaw needs a process to open a database and log file that a 
 
 ## What a code review found
 
-An independent AI review of the source (2026-11-26) found four faults. Three were changed, each behaviour change with a test that failed first:
+An independent AI review of the source (2026-11-26) found four faults. Three were changed; the two changes to the server each have a test that failed first:
 
 | Fault | Change |
 |---|---|
@@ -96,7 +96,7 @@ An independent AI review of the source (2026-11-26) found four faults. Three wer
 | Load-test runs shared one database that kept growing, though the text called it tiny | A fresh database per run, text corrected, figures re-measured |
 | Acknowledged writes can be lost on power failure | A deliberate setting, now stated under Limits |
 
-Seven deliberate breaks of the new code were each caught by a test.
+Seven deliberate breaks of the new code were each caught by a test. A second review of these fixes found that a signal arriving the instant the port opened could still kill the process; the signal handlers are now installed before the port opens. The load-test script now refuses to run if something else holds its port.
 
 ## Dependencies
 

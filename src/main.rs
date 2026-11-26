@@ -25,6 +25,10 @@ async fn main() -> anyhow::Result<()> {
         token_ttl_secs: config.token_ttl_secs,
     };
 
+    // Installed before the port opens: a signal that arrives as soon as the server is reachable must
+    // already be handled, not kill the process.
+    let signals = shutdown_signals().context("could not listen for shutdown signals")?;
+
     let listener = TcpListener::bind(config.bind_addr)
         .await
         .with_context(|| format!("could not bind {}", config.bind_addr))?;
@@ -32,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (signalled, signal_seen) = oneshot::channel();
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async move {
-        shutdown_signal().await;
+        signals.await;
         let _ = signalled.send(());
     });
     // Draining waits for every request, and a client that never finishes sending one would hold
@@ -64,26 +68,24 @@ fn init_tracing(json: bool) {
     }
 }
 
-/// Resolves on Ctrl-C or SIGTERM.
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        let _ = tokio::signal::ctrl_c().await;
-    };
+/// Starts listening for Ctrl-C and SIGTERM at once, and returns a future that resolves on either.
+fn shutdown_signals() -> std::io::Result<impl std::future::Future<Output = ()> + Send + 'static> {
     #[cfg(unix)]
-    let terminate = async {
-        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-            Ok(mut sig) => {
-                sig.recv().await;
-            }
-            Err(_) => std::future::pending::<()>().await,
-        }
+    let (mut interrupt, mut terminate) = {
+        use tokio::signal::unix::{signal, SignalKind};
+        (
+            signal(SignalKind::interrupt())?,
+            signal(SignalKind::terminate())?,
+        )
     };
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        () = ctrl_c => {},
-        () = terminate => {},
-    }
-    tracing::info!("shutdown signal received; draining in-flight requests");
+    Ok(async move {
+        #[cfg(unix)]
+        tokio::select! {
+            _ = interrupt.recv() => {},
+            _ = terminate.recv() => {},
+        }
+        #[cfg(not(unix))]
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutdown signal received; draining in-flight requests");
+    })
 }

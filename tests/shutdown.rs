@@ -39,8 +39,7 @@ impl Server {
             );
             std::thread::sleep(Duration::from_millis(20));
         }
-        // Listening comes just before the signal handlers are installed.
-        std::thread::sleep(Duration::from_millis(200));
+        // No pause: once the server listens, a signal must already be handled.
         server
     }
 
